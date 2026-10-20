@@ -1170,6 +1170,7 @@ def maturity_steps(sh, x, y_bottom, w, levels, *, current, target=None, base_h=1
     """成熟度阶梯：台阶逐级升高，已达到深灰、当前红色、未达到虚线框；当前台阶上方标位置，目标台阶插旗。
 
     levels = [(代号, 名称, [说明行])]；current / target 是台阶序号。
+    台阶窄到「代号  名称」放不下时，名称自动移到说明首行；目标文字放在旗杆左侧。
     """
     n = len(levels)
     sw = (w - gap * (n - 1)) / float(n)
@@ -1188,7 +1189,11 @@ def maturity_steps(sh, x, y_bottom, w, levels, *, current, target=None, base_h=1
         bb = rect(sh, sx, top, sw, band_h, band, G_MID if i > current else None, 0.75)
         if i > current:
             _dash(b); _dash(bb)
-        rich(sh, sx, top, sw, band_h, [(code + "  ", 10, True, bcol), (name, 10, True, bcol)], C)
+        if name and wpx(code + "  " + name, 10) * 1.1 > sw - 8:     # 台阶窄放不下：顶条只写代号，名称进说明首行
+            band_parts, desc = [(code, 10, True, bcol)], [name] + list(desc)
+        else:
+            band_parts = [(code + "  ", 10, True, bcol), (name, 10, True, bcol)]
+        rich(sh, sx, top, sw, band_h, band_parts, C)
         lines_box(sh, sx + 8, top + band_h + 8, sw - 12, y_bottom - top - band_h - 12,
                   [[(t, 9, i == current, dcol)] for t in desc], C, TOP, pitch=19)
     sx, top = tops[current]
@@ -1201,7 +1206,9 @@ def maturity_steps(sh, x, y_bottom, w, levels, *, current, target=None, base_h=1
         fx = sx + sw / 2.0 - 10
         line(sh, fx, top - 2, fx, top - 30, G_MID, 1.5)
         pl(sh, [(fx, top - 30), (fx + 22, top - 24), (fx, top - 18)], None, 0, True, T.red)
-        label(sh, fx + 26, top - 32, 80, 18, target_text, 9, True, T.red, align=L)
+        if target_text:                    # 放旗杆左侧：右侧是更高一级的台阶，文字会压上去
+            tw_ = wpx(target_text, 9) * 1.1 + 4
+            label(sh, fx - 6 - tw_, top - 32, tw_, 18, target_text, 9, True, T.red, align=R)
 
 
 # ============================================================ C28 中心辐射图

@@ -64,7 +64,7 @@ h, report = arch_diagram(sh, x, y, w, dict(
             Layer("协议层", focus=True, rows=[...]),
             Layer("引擎\n实现层", boxes=[Box("实现 A", Group(None, "能力1", "能力2")), ...])],
     actors=Edge("使用者", ...), external=Edge("外部依赖", ...), side=Side("安全\n管控", ...),
-    fanout=dict(a=1, b=2, label="按项目切换"), boundary="系统边界"))
+    fanout=dict(a=1, b=2, label="按项目切换"), boundary="系统边界"), fit_h=栏可用高度)
 
 from process_flow import *                      # 工序流程图
 h, report = process_flow(sh, x, y, w, dict(
@@ -73,6 +73,7 @@ h, report = process_flow(sh, x, y, w, dict(
     output=("发布", "交付"), loop=dict(src=6, dst=4, out="不过", note="定位问题\n回到 ④")))
 ```
 
+- **架构图比栏矮时不要硬撑满**：传 `fit_h=栏高`，引擎只把模块行加高到 1.6 cm 为止，层间距保持 0.5 cm；还剩超过 2 cm 留白会报 warn，这时补内容——层标题写「替谁 / 做什么」、模块配图标和副文字、加边界框、使用者 / 外部依赖行补齐到 3–4 项。别自己改 `ROW_H`、`LAYER_GAP`：模块里大片空白、层间拉开长箭头，整张图会散。
 - 文本小工具：`txt` 单个 run，`kw_line` 生成「**关键词：**说明」，`num_parts("约 {1200} 次")` 生成花括号内放大标红的数字。
 - 风格：默认是复刻风 `REPLICA`（按原图取色，已交付页面重建不变）。新做页面先切风格：`use_theme(LIGHT)` 浅色复刻风（圆角、浅红强调），`use_theme(STYLE)` ppt-deck 规范风（直角）。两者都是浅色系：色块和底色不用黑色和深灰，实心灰块配深字；框的边框、箭头连线默认黑色（风格的 `border` / `line` 属性，REPLICA 不设，沿用原图浅色）。切换后页面里要用 `T` 时再 `from components import T` 一次。
 - 用法样例：`tools/page_template.py`（常用组件各调一次，数据都是示意值）。

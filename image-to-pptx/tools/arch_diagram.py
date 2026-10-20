@@ -22,7 +22,9 @@ from components import _r, _c, _bd, _ln
 
 # ---------------- 栅格（1672 像素画布；1 cm ≈ 49 px） ----------------
 RAIL_W, PAD, GAP_X, GAP_Y = 80, 10, 8, 8          # 层名栏 1.6 cm；层内边距；模块横 / 纵间距
-ROW_H, TITLE_H = 44, 26                           # 模块行高 0.9 cm；层标题行
+ROW_H, TITLE_H = 44, 34                           # 模块行高 0.9 cm；层标题行（含与模块的间隙，26 会贴着模块）
+ROW_SUB_H, ROW_MAX = 56, 80                       # 带副文字的模块行 1.1 cm；fit_h 放大行高的上限 1.6 cm
+FIT_BLANK_MAX = 98                                # fit_h 下方留白超过 2 cm 就报 warn
 LAYER_GAP, FAN_GAP, EDGE_GAP = 24, 44, 26         # 层间距；带分发线的层间距；边界内外的间距
 CHIP_H, CHIP_GAP, BOX_TITLE_H, GROUP_LABEL_H = 28, 6, 30, 22
 SIDE_W, NOTE_W, COL_GAP, BPAD = 104, 108, 10, 12   # 跨层栏；注释栏；栏间距；边界内边距
@@ -120,6 +122,13 @@ def _arrow(sh, x, y1, y2, color, lw, head=True, tail=False):
 
 
 # ---------------- 高度计算 ----------------
+_ROW_EXTRA = [0]                                  # fit_h 临时加到每个模块行上的高度
+
+def _row_h(r):
+    """模块行高：有副文字的行用 ROW_SUB_H，两行字在 ROW_H 里会顶到边框。"""
+    base = ROW_SUB_H if any(m['sub'] for m in r['items']) else ROW_H
+    return min(base + _ROW_EXTRA[0], max(base, ROW_MAX))
+
 def _box_h(b):
     R = b.get('rows', 2)
     grid = R * CHIP_H + (R - 1) * CHIP_GAP
@@ -132,7 +141,7 @@ def _layer_h(L):
     if L['title']:
         h += TITLE_H
     if L['rows']:
-        h += len(L['rows']) * ROW_H + (len(L['rows']) - 1) * GAP_Y
+        h += sum(_row_h(r) for r in L['rows']) + (len(L['rows']) - 1) * GAP_Y
     if L['boxes']:
         if L['rows']:
             h += GAP_Y
@@ -254,11 +263,29 @@ def _box(sh, ctx, b, x, y, w, h, where):
 
 
 # ---------------- 主函数 ----------------
-def arch_diagram(sh, x, y, w, spec, *, bg=None, draw=True):
+def arch_diagram(sh, x, y, w, spec, *, bg=None, draw=True, fit_h=None):
     """按规格自动排版并绘制分层架构图。返回 (高度, 体检结果)。
 
     spec 键：layers（必填）、actors、external、side、boundary（边界名）、fanout、links、legend（默认 True）。
+    fit_h：所在栏的可用高度。只把模块行加高到 ROW_MAX 为止，层间距保持 0.5 cm 不动；
+    还剩超过 2 cm 留白时报 warn——该补内容（层标题、图标与副文字、边界框、使用者 / 外部依赖行），
+    不要自己改 ROW_H、LAYER_GAP 硬撑满：模块里大片空白、层间拉开长箭头，图会显得松散。
     """
+    if fit_h is not None:
+        natural, _ = arch_diagram(sh, x, y, w, spec, bg=bg, draw=False)
+        n_rows = sum(len(L_['rows']) for L_ in spec['layers'])
+        if natural <= fit_h and n_rows:
+            _ROW_EXTRA[0] = int((fit_h - natural) / n_rows)
+        try:
+            h, rep_ = arch_diagram(sh, x, y, w, spec, bg=bg, draw=draw)
+        finally:
+            _ROW_EXTRA[0] = 0
+        if h > fit_h:
+            rep_['issues'].append(("error", "图高 %d px，超出可用高度 %d px：减层、减行或缩短栏外内容" % (h, fit_h)))
+        elif fit_h - h > FIT_BLANK_MAX:
+            rep_['issues'].append(("warn", "下方留白 %.1f cm：补层标题、图标与副文字、边界框或外围行，不要拉大层间距"
+                                   % ((fit_h - h) / 49.4)))
+        return h, rep_
     layers = spec['layers']
     side, actors, external = spec.get('side'), spec.get('actors'), spec.get('external')
     boundary, fan = spec.get('boundary'), spec.get('fanout')
@@ -325,7 +352,7 @@ def arch_diagram(sh, x, y, w, spec, *, bg=None, draw=True):
         rrect(sh, band_x0, ey, RAIL_W, EDGE_H, RAIL, None, radius=_r(5))
         label(sh, band_x0, ey, RAIL_W, EDGE_H, E['name'], 10, True, T.ink)
         n = len(E['items'])
-        iw = min(200.0, (mod_w - GAP_X * (n - 1)) / n)
+        iw = (mod_w - GAP_X * (n - 1)) / n            # 和模块区一样等宽铺满，左右边缘对齐
         xs = []
         for k, (name, sub, icon) in enumerate(E['items']):
             ix = mod_x0 + k * (iw + GAP_X)
@@ -367,6 +394,7 @@ def arch_diagram(sh, x, y, w, spec, *, bg=None, draw=True):
             lab_w = max(pill_w(r['label'], 10) for r in Lr['rows'] if r['label'])
         for r in Lr['rows']:
             n = len(r['items'])
+            rh = _row_h(r)
             total_rows_items += n
             lo, hi = LIMITS['per_row']
             if n > hi:
@@ -376,8 +404,8 @@ def arch_diagram(sh, x, y, w, spec, *, bg=None, draw=True):
             ix0 = mod_x0
             if lab_w:
                 if r['label']:
-                    rrect(sh, mod_x0, cy, lab_w, ROW_H, RAIL, None, radius=_r(4))
-                    label(sh, mod_x0, cy, lab_w, ROW_H, r['label'], 10, True, T.ink)
+                    rrect(sh, mod_x0, cy, lab_w, rh, RAIL, None, radius=_r(4))
+                    label(sh, mod_x0, cy, lab_w, rh, r['label'], 10, True, T.ink)
                     if r['n']:
                         ctx['marks'].append((mod_x0 + 12, cy + 2, r['n']))
                 ix0 = mod_x0 + lab_w + GAP_X
@@ -389,10 +417,10 @@ def arch_diagram(sh, x, y, w, spec, *, bg=None, draw=True):
                     qa.append(("error", "模块名「%s」%g 字，超过上限 %d" % (m['text'], c_, ch_hi)))
                 elif c_ > ch_lo:
                     qa.append(("warn", "模块名「%s」%g 字，建议不超过 %d" % (m['text'], c_, ch_lo)))
-                _module(sh, ctx, m, ix0 + k * (iw + GAP_X), cy, iw, ROW_H, "模块")
+                _module(sh, ctx, m, ix0 + k * (iw + GAP_X), cy, iw, rh, "模块")
                 if m['state'] == "hot":
                     ctx['count']['hot'] += 1
-            cy += ROW_H + GAP_Y
+            cy += rh + GAP_Y
         if Lr['boxes']:
             if not Lr['rows']:
                 cy -= 0
